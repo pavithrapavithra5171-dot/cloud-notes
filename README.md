@@ -162,6 +162,3 @@ Cloud Notes project was successfully completed. We achieved our main goal: *Secu
 *Guide: Mobile App Development Lab*
 
 ---
-4. Click *Commit changes*
-
-After commit, send me screenshot! It will look AMAZING with badges and big headings!
