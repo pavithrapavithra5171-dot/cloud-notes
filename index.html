@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cloud Notes</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+</head>
+<body class="bg-gradient-to-br from-purple-100 to-blue-100 min-h-screen p-4">
+<div class="max-w-md mx-auto mt-6 bg-white rounded-2xl shadow-xl p-6">
+  <h1 class="text-2xl font-bold text-center text-purple-700">☁️ Cloud Notes</h1>
+  <p class="text-center text-xs text-gray-400 mb-6">Your private cloud notes</p>
+
+  <div id="authBox">
+    <input id="email" type="email" placeholder="Email" class="w-full p-3 border rounded-xl mb-3">
+    <input id="password" type="password" placeholder="Password" class="w-full p-3 border rounded-xl mb-3">
+    <button onclick="login()" class="w-full bg-purple-600 text-white p-3 rounded-xl font-bold mb-2">Login</button>
+    <button onclick="signup()" class="w-full bg-gray-200 p-3 rounded-xl font-bold mb-2">Create New Account</button>
+    <p id="authMsg" class="text-center text-sm mt-2"></p>
+  </div>
+
+  <div id="notesBox" class="hidden">
+    <div class="flex justify-between items-center mb-4">
+      <p id="userEmail" class="text-xs font-bold text-purple-700 truncate"></p>
+      <button onclick="logout()" class="text-xs bg-red-100 text-red-600 px-3 py-1 rounded-full">Logout</button>
+    </div>
+    <input id="search" oninput="renderNotes()" placeholder="🔍 Search notes..." class="w-full p-3 border rounded-xl mb-4">
+    <div class="bg-purple-50 p-4 rounded-xl mb-4">
+      <p id="formTitle" class="text-xs font-bold text-purple-600 mb-2">Add New Note</p>
+      <input id="titleInput" placeholder="Title" class="w-full p-2 border rounded-lg mb-2 text-sm font-bold">
+      <textarea id="noteInput" placeholder="Your note..." class="w-full p-2 border rounded-lg mb-2 text-sm" rows="3"></textarea>
+      <div class="flex gap-2">
+        <button id="mainBtn" onclick="addOrUpdateNote()" class="flex-1 bg-purple-600 text-white p-2 rounded-lg font-bold text-sm">+ Add Note</button>
+        <button id="cancelBtn" onclick="cancelEdit()" class="hidden bg-gray-300 p-2 rounded-lg text-sm px-4">Cancel</button>
+      </div>
+      <p id="status" class="text-center text-xs mt-2"></p>
+    </div>
+    <div id="notesList" class="space-y-3"></div>
+    <p id="count" class="text-center text-xs text-gray-400 mt-4"></p>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, addDoc, query, where, getDocs, deleteDoc, doc, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAmyoRfkr-z1DmcbCTdDVDyLc563ez6rkI",
+  authDomain: "pavithra-cloud-notes.firebaseapp.com",
+  projectId: "pavithra-cloud-notes",
+  storageBucket: "pavithra-cloud-notes.firebasestorage.app",
+  messagingSenderId: "369392560369",
+  appId: "1:369392560369:web:bae2905119319e3849e150"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+let allNotes = []; let editingId = null;
+
+function enc(t){ return CryptoJS.AES.encrypt(t, auth.currentUser.uid).toString(); }
+function dec(c){ try{ const d=CryptoJS.AES.decrypt(c, auth.currentUser.uid).toString(CryptoJS.enc.Utf8); return d||c; } catch(e){ return c; } }
+
+window.signup = async () => {
+  const e=document.getElementById('email').value; const p=document.getElementById('password').value; const m=document.getElementById('authMsg');
+  try{ await createUserWithEmailAndPassword(auth,e,p); } catch(err){ m.innerText=err.code==='auth/email-already-in-use'?"Email exists - Click Login!":err.message; m.className="text-center text-sm mt-2 text-red-500"; }
+}
+window.login = async () => {
+  const e=document.getElementById('email').value; const p=document.getElementById('password').value; const m=document.getElementById('authMsg');
+  try{ await signInWithEmailAndPassword(auth,e,p); } catch(err){ m.innerText=err.message; m.className="text-center text-sm mt-2 text-red-500"; }
+}
+window.logout = () => signOut(auth);
+
+window.addOrUpdateNote = async () => {
+  const title=document.getElementById('titleInput').value.trim(); 
+  const text=document.getElementById('noteInput').value.trim();
+  const status=document.getElementById('status');
+  if(!title && !text) return alert("Add title or content");
+  
+  try {
+    if(editingId){
+      status.innerText="Updating..."; status.className="text-center text-xs mt-2 text-blue-600";
+      // FIXED UPDATE - now with email+uid also to pass rules
+      await updateDoc(doc(db,"notes",editingId),{
+        title:enc(title||"Untitled"),
+        text:enc(text),
+        email:auth.currentUser.email,
+        uid:auth.currentUser.uid
+      });
+      status.innerText="Updated! ✓"; 
+      editingId=null; 
+      document.getElementById('mainBtn').innerText="+ Add Note"; 
+      document.getElementById('formTitle').innerText="Add New Note"; 
+      document.getElementById('cancelBtn').classList.add('hidden');
+    } else {
+      status.innerText="Saving..."; status.className="text-center text-xs mt-2 text-blue-600";
+      await addDoc(collection(db,"notes"),{
+        title:enc(title||"Untitled"),
+        text:enc(text),
+        uid:auth.currentUser.uid,
+        email:auth.currentUser.email,
+        createdAt:serverTimestamp()
+      });
+      status.innerText="Saved to cloud! ✓";
+    }
+    document.getElementById('titleInput').value=""; document.getElementById('noteInput').value="";
+    setTimeout(()=>{ status.innerText=""; },2000);
+    await loadNotes();
+  } catch(err){
+    status.innerText="Error: "+err.message; status.className="text-center text-xs mt-2 text-red-600";
+    alert("Update failed: "+err.message+"\n\nGo to Firebase > Firestore > Rules and set:\nallow read, write: if true;");
+  }
+}
+
+window.editNote = (id) => {
+  const n=allNotes.find(x=>x.id===id); if(!n) return;
+  document.getElementById('titleInput').value=n.titleDec; 
+  document.getElementById('noteInput').value=n.textDec;
+  editingId=id; 
+  document.getElementById('mainBtn').innerText="✓ Update Note"; 
+  document.getElementById('formTitle').innerText="Editing..."; 
+  document.getElementById('cancelBtn').classList.remove('hidden');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+window.cancelEdit = () => { 
+  editingId=null; document.getElementById('titleInput').value=""; document.getElementById('noteInput').value=""; 
+  document.getElementById('mainBtn').innerText="+ Add Note"; document.getElementById('formTitle').innerText="Add New Note"; 
+  document.getElementById('cancelBtn').classList.add('hidden'); document.getElementById('status').innerText="";
+}
+
+async function loadNotes(){
+  const q=query(collection(db,"notes"), where("uid","==",auth.currentUser.uid)); 
+  const snap=await getDocs(q);
+  allNotes=[]; 
+  snap.forEach(d=>{ 
+    const data=d.data(); 
+    allNotes.push({
+      id:d.id,
+      titleDec:dec(data.title),
+      textDec:dec(data.text),
+      createdAt:data.createdAt,
+      email:data.email
+    }); 
+  });
+  allNotes.sort((a,b)=> (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  renderNotes();
+}
+window.renderNotes = () => {
+  const s=document.getElementById('search').value.toLowerCase(); 
+  const f=allNotes.filter(n=> (n.titleDec+n.textDec).toLowerCase().includes(s));
+  const list=document.getElementById('notesList'); list.innerHTML=""; 
+  if(f.length===0){ list.innerHTML=`<p class='text-center text-gray-400 text-sm py-6'>${s?"No results":"No notes yet"}</p>`; }
+  else { 
+    f.forEach(n=>{ 
+      const dt=n.createdAt? new Date(n.createdAt.seconds*1000).toLocaleDateString() : "now"; 
+      list.innerHTML+=`<div class='border p-3 rounded-xl bg-white'><div class='flex justify-between items-start'><div class='flex-1'><h3 class='font-bold text-sm text-purple-700'>${n.titleDec}</h3><p class='text-sm text-gray-700 mt-1 whitespace-pre-wrap'>${n.textDec}</p><p class='text-[10px] text-gray-400 mt-2'>${dt}</p></div><div class='flex flex-col gap-1 ml-2'><button onclick="editNote('${n.id}')" class='text-xs bg-blue-100 text-blue-600 px-3 py-1 rounded-full font-bold'>Edit</button><button onclick="deleteNote('${n.id}')" class='text-xs bg-red-100 text-red-600 px-3 py-1 rounded-full'>Delete</button></div></div></div>`; 
+    }); 
+  }
+  document.getElementById('count').innerText=`${f.length} of ${allNotes.length} notes • Private to you`;
+}
+window.deleteNote = async (id) => { if(confirm("Delete?")){ await deleteDoc(doc(db,"notes",id)); if(editingId===id) cancelEdit(); loadNotes(); } }
+
+onAuthStateChanged(auth, user=>{ if(user){ document.getElementById('authBox').classList.add('hidden'); document.getElementById('notesBox').classList.remove('hidden'); document.getElementById('userEmail').innerText=user.email; loadNotes(); } else { document.getElementById('authBox').classList.remove('hidden'); document.getElementById('notesBox').classList.add('hidden'); } });
+</script>
+</body>
+</html>
