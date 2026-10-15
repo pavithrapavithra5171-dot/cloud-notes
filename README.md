@@ -1,5 +1,5 @@
 ☁️ Cloud Notes - A Secure Cloud-Based Note Taking Application
-By Pavithra P | Final Year Project
+By Pavithra V | Final Year Project
 
 <p align="center">
   <a href="https://pavithrapavithra5171-dot.github.io/cloud-notes/"><b>🌐 Live Website</b></a> •
